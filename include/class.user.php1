@@ -1,0 +1,1559 @@
+<?php
+class User extends Functions
+{
+	public $detail=array();
+	public $user_type=array(0=>"email",1=>"Facebook account",2=>"Google account",3=>"Twitter account");
+	public $ctable="user";
+	public $ctableWallet="user_wallet";
+	public $ctableWalletTransaction="wallet_transaction";
+	public $ctableFeedLike="feed_like";
+	
+	public $db;
+	function __construct($id="") 
+	{
+		$db = new Functions();
+		$conn = $db->connect();
+		$this->db=$db;		   
+    }     	
+	function addNormalUser($detail)
+	{
+		if(!empty($detail))
+		{
+			$isValid=$this->validateDetail($detail,array("name","email","password","phone"));
+			if($isValid['ack']==1)
+			{
+				$countFromEmail=$this->countUser($detail['email'],"email");
+				$countFromPhone=$this->countUser($detail['phone'],"phone");
+				if($countFromEmail<=0 && $countFromPhone<=0)
+				{
+					// Registration  of normal user
+					$value=array($detail['name'],$detail['email'],md5($detail['password']),$detail['phone'],$detail['imei'],$detail['refresh_token'],$this->db->today());
+					$rows=array("name","email","password","phone","imei","refresh_token","regDate");
+					$registerd_user_id=$this->rp_insert($this->ctable,$value,$rows);
+					if($registerd_user_id!=0)
+					{
+						$wallet_info=$this->addNewWallet(array("id"=>$registerd_user_id));
+						if($wallet_info['ack']==1)
+						$wallet_info=$wallet_info['result'];
+						else
+						$wallet_info=array();
+						$user_detail=$this->getUserDetail($registerd_user_id);
+						$user_detail['result']['wallet_info']=$wallet_info;
+						
+						// Send OTP to User For Mobile Number Verification
+						$otp=$this->generateActivationCode();
+						$ack=$this->aj_sendSecurityCode($detail['name'],$detail['phone'],$otp);
+						$this->db->rp_update($this->ctable,array("otp"=>$otp),"id='".$registerd_user_id."'");
+						
+						$reply=array("ack"=>1,"developer_msg"=>"User Registered.","ack_msg"=>"Registration Successfull.","result"=>$user_detail['result']);
+						return $reply;
+					}				
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Registration Failed.");
+						return $reply;
+					}
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"Email already exits","ack_msg"=>"Email already registered.");
+					return $reply;
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+				return $reply;
+			}
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}
+	function addNewWallet($detail)
+	{
+		if(!empty($detail))
+		{
+			
+				$countFromUserId=$this->countWallet($detail['id'],"uid");				
+				if($countFromUserId<=0)
+				{
+					// add new wallet to user account
+					$value=array($detail['id'],"0",$this->db->today());
+					$rows=array("uid","amount","adate");
+					$registerd_user_wallet_id=$this->rp_insert($this->ctableWallet,$value,$rows);
+					if($registerd_user_wallet_id!=0)
+					{
+						$registerd_user_wallet_detail=$this->getUserWalletDetail(array("id"=>$detail['id']));
+						if($registerd_user_wallet_detail['ack']==1)
+						$registerd_user_wallet_detail=$registerd_user_wallet_detail['result'];
+						else
+						$registerd_user_wallet_detail=array();					
+						$reply=array("ack"=>1,"developer_msg"=>"Wallet Added Successfully","ack_msg"=>"Wallet Added Successfully.","result"=>$registerd_user_wallet_detail);
+						return $reply;
+					}				
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error!!");
+						return $reply;
+					}
+				}
+				else
+				{
+					$registerd_user_wallet_detail=$this->getUserWalletDetail(array("id"=>$detail['id']));
+					if($registerd_user_wallet_detail['ack']==1)
+					$registerd_user_wallet_detail=$registerd_user_wallet_detail['result'];
+					else
+					$registerd_user_wallet_detail=array();	
+					$reply=array("ack"=>1,"developer_msg"=>"User already have wallet","ack_msg"=>"User already have one wallet!!","result"=>$result);
+					return $reply;
+				}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}	
+	function updateWalletAmount($detail)
+	{
+		if(!empty($detail))
+		{
+			
+				$countFromUserId=$this->countWallet($detail['id'],"uid");				
+				if($countFromUserId>=1)
+				{
+					$registerd_user_wallet_detail=$this->getUserWalletDetail(array("id"=>$detail['id']));
+					if($registerd_user_wallet_detail['ack']==1)
+					{
+						$registerd_user_wallet_detail=$registerd_user_wallet_detail['result'];
+						$wallet_id=$registerd_user_wallet_detail['id'];						
+						$detail['wid']=$wallet_id;						
+						$transaction_reply=$this->createWalletTransaction($detail);
+						if($transaction_reply['ack']==1)
+						{
+							$values=array("amount"=>$detail['amount']);
+							$isUpdated=$this->db->rp_update("user_wallet",$values,"id='".$wallet_id."'",0);
+							if($isUpdated)
+							{
+								
+								$reply=array("ack"=>1,"developer_msg"=>"Wallet Credited","ack_msg"=>"Wallet Credited!!","transaction_id"=>$transaction_reply['transaction_id']);
+								return $reply;
+							}
+							else
+							{
+								$reply=array("ack"=>0,"developer_msg"=>"Database Error!!","ack_msg"=>"Internal Error!!.");
+								return $reply;
+							}
+						}
+						else
+						{
+							$reply=array("ack"=>0,"developer_msg"=>"Transaction Failed!!","ack_msg"=>"Internal Error!!.");
+							return $reply;
+						}
+						
+						
+					}
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"wallet detail not found","ack_msg"=>"Internal Error!!.");
+						return $reply;
+					}
+				
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+					return $reply;
+				}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"Wallet Detail Not Found!!","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}
+	function createWalletTransaction($detail)
+	{
+		if(!empty($detail))
+		{			
+				$countFromWalletId=$this->countWallet($detail['wid'],"id");				
+				if($countFromWalletId>=1)
+				{
+					
+					$values=array($detail['wid'],$detail['ref_id'],$detail['ref_type'],$detail['transaction_type'],$detail['used_amount']);
+					$rows=array("wid","ref_id","ref_type","transaction_type","amount");
+					
+			
+					$walletTransactionId=$this->db->rp_insert("wallet_transaction",$values,$rows,0);
+					if($walletTransactionId!=0)
+					{						
+						$reply=array("ack"=>1,"transaction_id"=>$walletTransactionId,"developer_msg"=>"Wallet Transaction Updated!!","ack_msg"=>"Wallet Transaction Updated!!");
+						return $reply;
+					}
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Database Error!!","ack_msg"=>"Internal Error!!.");
+						return $reply;
+					}									
+				
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"wallet detail not found","ack_msg"=>"Internal Error!!.");
+					return $reply;
+				}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"Wallet Detail Not Found!!","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}
+	function loginNormalUser($detail)
+	{
+		if(!empty($detail))
+		{
+			$isValid=$this->validateDetail($detail,array("email","password"));
+			if($isValid['ack']==1)
+			{
+				$countFromEmail=$this->countUser($detail['email'],"email");
+				if($countFromEmail>=1)
+				{
+					$registerd_user_id=$this->db->rp_getValue($this->ctable,"id","email='".$detail['email']."'",0);
+					$user_detail=$this->getUserDetail($registerd_user_id);
+					$user_detail=$user_detail['result'];
+					if($user_detail['user_type']==0)
+					{
+						if(($user_detail['password']==md5($detail['password'])))
+						{
+							if($user_detail['isMobileVerified']==1)
+							{
+								$values=array("imei"=>$detail['imei'],"refresh_token"=>$detail['refresh_token'],"last_login"=>$this->db->today());
+								$this->db->rp_update($this->ctable,$values,"id='".$user_detail['id']."'");
+								$reply=array("ack"=>1,"developer_msg"=>"Returned Normal User.","ack_msg"=>"Successfully Logged in","result"=>$user_detail);
+								return $reply;
+							}
+							else
+							{
+								$reply=array("ack"=>2,"developer_msg"=>"Returned Normal User Not Verfied Mobile Number.","ack_msg"=>"Verify Mobile Number!!","result"=>$user_detail);
+								return $reply;
+							}
+							
+							
+						}
+						else
+						{							
+							$reply=array("ack"=>0,"developer_msg"=>"Email and password not match.","ack_msg"=>"Email and password not match.");
+							return $reply;
+						}
+					}
+					else
+					{
+						$type=(array_key_exists(intval($user_detail['user_type']),$this->user_type))?$this->user_type[intval($user_detail['user_type'])]:$this->user_type[0];
+						$msg="You are registered with ".$type.". Please login with it.";
+						$reply=array("ack"=>0,"developer_msg"=>$msg,"ack_msg"=>$msg,"user_type"=>$user_detail['user_type']);
+						return $reply;
+					}
+					
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"email not registered","ack_msg"=>"Email not registered.","invalid_field"=>$isValid['invalid']);
+					return $reply;
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+				return $reply;
+			}
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}	
+	function loginFacebookUser($detail)
+	{
+		if(!empty($detail))
+		{
+			$isValid=$this->validateDetail($detail,array("name","email"));
+			if($isValid['ack']==1)
+			{
+				$countFromEmail=$this->countUser($detail['email'],"email");
+				if($countFromEmail<=0)
+				{
+					// Registration  of facebook user
+					$value=array($detail['name'],$detail['email'],"1",$detail['facebook_id'],$detail['auth_token'],$detail['imei'],$detail['refresh_token'],$this->db->today(),$this->db->today());
+					$rows=array("name","email","user_type","facebook_id","auth_token","imei","refresh_token","regDate","last_login");
+					$registerd_user_id=$this->rp_insert($this->ctable,$value,$rows);
+					if($registerd_user_id!=0)
+					{						
+						$user_detail=$this->getUserDetail($registerd_user_id);
+						$reply=array("ack"=>1,"developer_msg"=>"Facebook User Registered.","ack_msg"=>"Registration Successfull.","result"=>$user_detail['result']);
+						return $reply;
+					}				
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Registration Failed.");
+						return $reply;
+					}
+				}
+				else
+				{
+					$registerd_user_id=$this->db->rp_getValue($this->ctable,"id","email='".$detail['email']."'",0);
+					$user_detail=$this->getUserDetail($registerd_user_id);
+					$user_detail=$user_detail['result'];
+					if($user_detail['user_type']==1)
+					{
+						$values=array("last_login"=>$this->db->today());
+						$this->db->rp_update($this->ctable,$values,"id='".$user_detail['id']."'");
+						$reply=array("ack"=>1,"developer_msg"=>"Returned Facebook User.","ack_msg"=>"Successfully Logged in","result"=>$user_detail);
+						return $reply;
+					}
+					else
+					{
+						$type=(array_key_exists(intval($user_detail['user_type']),$this->user_type))?$this->user_type[intval($user_detail['user_type'])]:$this->user_type[0];
+						$msg="You are registered with ".$type.". Please login with it.";
+						$reply=array("ack"=>0,"developer_msg"=>$msg,"ack_msg"=>$msg,"user_type"=>$user_detail['user_type']);
+						return $reply;
+					}
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+				return $reply;
+			}
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}
+	function loginGoogleUser($detail)
+	{
+		if(!empty($detail))
+		{
+			$isValid=$this->validateDetail($detail,array("name","email"));
+			if($isValid['ack']==1)
+			{
+				$countFromEmail=$this->countUser($detail['email'],"email");
+				if($countFromEmail<=0)
+				{
+					// Registration  of google user
+					$value=array($detail['name'],$detail['email'],"2",$detail['google_id'],$detail['auth_token'],$detail['imei'],$detail['refresh_token'],$this->db->today(),$this->db->today());
+					$rows=array("name","email","user_type","google_id","auth_token","imei","refresh_token","regDate","last_login");
+					$registerd_user_id=$this->rp_insert($this->ctable,$value,$rows);
+					if($registerd_user_id!=0)
+					{						
+						$user_detail=$this->getUserDetail($registerd_user_id);
+						$reply=array("ack"=>1,"developer_msg"=>"Google User Registered.","ack_msg"=>"Registration Successfull.","result"=>$user_detail['result']);
+						return $reply;
+					}				
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Registration Failed.");
+						return $reply;
+					}
+				}
+				else
+				{
+					$registerd_user_id=$this->db->rp_getValue($this->ctable,"id","email='".$detail['email']."'",0);
+					$user_detail=$this->getUserDetail($registerd_user_id);
+					$user_detail=$user_detail['result'];
+					if($user_detail['user_type']==2)
+					{
+						$values=array("last_login"=>$this->db->today());
+						$this->db->rp_update($this->ctable,$values,"id='".$user_detail['id']."'");
+						$reply=array("ack"=>1,"developer_msg"=>"Returned Google User.","ack_msg"=>"Successfully Logged in","result"=>$user_detail);
+						return $reply;
+					}
+					else
+					{
+						$type=(array_key_exists(intval($user_detail['user_type']),$this->user_type))?$this->user_type[intval($user_detail['user_type'])]:$this->user_type[0];
+						$msg="You are registered with ".$type.". Please login with it.";
+						$reply=array("ack"=>0,"developer_msg"=>$msg,"ack_msg"=>$msg,"user_type"=>$user_detail['user_type']);
+						return $reply;
+					}
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+				return $reply;
+			}
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}
+	function loginTwitterUser($detail)
+	{
+		if(!empty($detail))
+		{
+			$isValid=$this->validateDetail($detail,array("name","email"));
+			if($isValid['ack']==1)
+			{
+				$countFromEmail=$this->countUser($detail['email'],"email");
+				if($countFromEmail<=0)
+				{
+					// Registration  of twitter user
+					$value=array($detail['name'],$detail['email'],"3",$detail['twitter_id'],$detail['auth_token'],$detail['imei'],$detail['refresh_token'],$this->db->today(),$this->db->today());
+					$rows=array("name","email","user_type","twitter_id","auth_token","imei","refresh_token","regDate","last_login");
+					$registerd_user_id=$this->rp_insert($this->ctable,$value,$rows);
+					if($registerd_user_id!=0)
+					{						
+						$user_detail=$this->getUserDetail($registerd_user_id);
+						$reply=array("ack"=>1,"developer_msg"=>"Twitter User Registered.","ack_msg"=>"Registration Successfull.","result"=>$user_detail['result']);
+						return $reply;
+					}				
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Registration Failed.");
+						return $reply;
+					}
+				}
+				else
+				{
+					$registerd_user_id=$this->db->rp_getValue($this->ctable,"id","email='".$detail['email']."'",0);
+					$user_detail=$this->getUserDetail($registerd_user_id);
+					$user_detail=$user_detail['result'];
+					if($user_detail['user_type']==3)
+					{
+						$values=array("last_login"=>$this->db->today());
+						$this->db->rp_update($this->ctable,$values,"id='".$user_detail['id']."'");
+						$reply=array("ack"=>1,"developer_msg"=>"Returned Twitter User.","ack_msg"=>"Successfully Logged in","result"=>$user_detail);
+						return $reply;
+					}
+					else
+					{
+						$type=(array_key_exists(intval($user_detail['user_type']),$this->user_type))?$this->user_type[intval($user_detail['user_type'])]:$this->user_type[0];
+						$msg="You are registered with ".$type.". Please login with it.";
+						$reply=array("ack"=>0,"developer_msg"=>$msg,"ack_msg"=>$msg,"user_type"=>$user_detail['user_type']);
+						return $reply;
+					}
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+				return $reply;
+			}
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}
+	function updateUserContactNumberPart1($detail)
+	{
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");
+			$countFromPhone=$this->countUser($detail['phone'],"phone");
+			if($countFromId>=1)
+			{
+				if($countFromPhone<=0)
+				{
+					$isValid=$this->validateDetail($detail,array("phone"));
+					if($isValid['ack']==1)
+					{
+						
+						return $reply=$this->sendOTPToContactNumber($detail);			
+					}
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+						return $reply;
+					}
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"mobile number already registerd","ack_msg"=>"Mobile number already registerd. Try diffrent one.");
+					return $reply;
+				}
+				
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+				return $reply;
+			}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+		}
+	}
+	function updateUserContactNumberPart2($detail)
+	{
+		
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");
+			$countFromPhone=$this->countUser($detail['phone'],"phone");
+			if($countFromId>=1)
+			{
+				
+				if($countFromPhone<=0)
+				{
+					
+					$isValid=$this->validateDetail($detail,array("phone"));
+					if($isValid['ack']==1)
+					{
+						
+						 $reply=$this->verifyOTP($detail);			
+						 if($reply['ack']==1)
+						 {
+							 // Update Contact Number
+							 $activationCode=$this->generateActivationCode();
+							 $values=array("otp"=>$activationCode,"phone"=>$detail['phone']);
+							 $isUpdated=$this->rp_update("user",$values,"id='".$detail['id']."'",0);
+							 if($isUpdated==1)
+							 {
+								$reply=array("ack"=>1,"developer_msg"=>"Contact Number updated","ack_msg"=>"Contact number updated successfully!!");
+								return $reply;
+							 }
+							 else
+							 {
+								 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error. Contact number not changed!!");
+								return $reply;
+							 }
+						 }
+						 else
+						 {
+							return $reply; 
+						 }
+					}
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+						return $reply;
+					}
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"mobile number already registerd","ack_msg"=>"Mobile number already registerd. Try diffrent one.");
+					return $reply;
+				}
+				
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+				return $reply;
+			}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+		}
+	}
+	function verifyUserAccountMobile($detail)
+	{
+		
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");			
+			$countFromPhone=$this->countUser($detail['phone'],"phone");
+			if($countFromId>=1)
+			{
+					
+				$isValid=$this->validateDetail($detail,array("phone"));
+				if($isValid['ack']==1)
+				{
+					
+					 $reply=$this->verifyOTP($detail);			
+					 if($reply['ack']==1)
+					 {
+						 // Update OTP 
+						 $activationCode=$this->generateActivationCode();
+						 $values=array("otp"=>$activationCode,"phone"=>$detail['phone'],"isMobileVerified"=>1);
+						 $isUpdated=$this->rp_update("user",$values,"id='".$detail['id']."'",0);
+						 if($isUpdated==1)
+						 {
+							$user_detail=$this->getUserDetail($detail['id']);
+							$user_detail=$user_detail['result'];
+							
+							$reply=array("ack"=>1,"developer_msg"=>"Contact Number verfied","ack_msg"=>"Contact number verfied successfully!!","result"=>$user_detail);
+							return $reply;
+						 }
+						 else
+						 {
+							 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error. Contact number not verfied !!");
+							return $reply;
+						 }
+					 }
+					 else
+					 {
+						return $reply; 
+					 }
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+					return $reply;
+				}
+				
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+				return $reply;
+			}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+		}
+	}
+	function updateUserPassword($detail)
+	{
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");			
+			if($countFromId>=1)
+			{				
+				$count=$this->rp_getTotalRecord("user","id='".$detail['id']."' AND password='".md5($detail['old_password'])."'");
+				if($count>=1)
+				{
+					 // Update password
+					 $values=array("password"=>md5($detail['new_password']));
+					 $isUpdated=$this->rp_update("user",$values,"id='".$detail['id']."'",0);
+					 if($isUpdated==1)
+					 {
+						$reply=array("ack"=>1,"developer_msg"=>"Password updated","ack_msg"=>"Password updated successfully!!");
+						return $reply;
+					 }
+					 else
+					 {
+						 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error. Password not updated!!");
+						return $reply;
+					 }
+				}
+				else
+				{
+					$reply=array("ack"=>2,"developer_msg"=>"Old password not matched.","ack_msg"=>"Old password not matched");
+					return $reply;
+				}
+																			
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+				return $reply;
+			}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+		}
+	}
+	function maintainWishlist($uid,$pid,$operation)
+	{
+		$countFromId=$this->countUser($uid,"id");			
+		if($countFromId>=1)
+		{
+			$where="uid='".$uid."' AND pid='".$pid."'";	
+			$count=$this->rp_getTotalRecord("wishlist",$where);
+			if($operation==1)
+			{
+				
+				if($count==0)					
+				{
+					 //Add Product to wishlist				
+					 $values=array($uid,$pid,$this->db->today());
+					 $rows=array("uid","pid","adate");
+					 $wishlist_id=$this->rp_insert("wishlist",$values,$rows,0);
+					 if($wishlist_id!=0)
+					 {
+						$reply=array("ack"=>1,"developer_msg"=>"Added to wishlist","ack_msg"=>"Product added to wishlist!!");
+						return $reply;
+					 }
+					 else
+					 {
+						 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error!!");
+						return $reply;
+					 }
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"Already in wishlist","ack_msg"=>"Product already in wishlist.");
+					return $reply;
+				}
+				
+			}
+			if($operation==0)
+			{				
+				if($count==1)					
+				{
+					 //remove Product from wishlist									
+					 $wishlist_id=$this->rp_getValue("wishlist","id",$where);			
+					 $isRemoved=$this->rp_delete("wishlist","id='".$wishlist_id."'",0);
+					 if($isRemoved)
+					 {
+						$reply=array("ack"=>1,"developer_msg"=>"Product removed from wishlist","ack_msg"=>"Product removed from wishlist!!");
+						return $reply;
+					 }
+					 else
+					 {
+						 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error!!");
+						return $reply;
+					 }
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"Product is not in wishlist","ack_msg"=>"Product not found in wishlist.");
+					return $reply;
+				}
+				
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"Operation not found","ack_msg"=>"Internal Error!!");
+				return $reply;
+			}
+																		
+		}
+		else
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+			return $reply;
+		}
+	}
+	function maintainFeedLike($uid,$fid,$operation)
+	{
+		$countFromId=$this->countUser($uid,"id");			
+		if($countFromId>=1)
+		{
+			$where="liker_id='".$uid."' AND feed_id='".$fid."'";	
+			$count=$this->rp_getTotalRecord("feed_like",$where);
+			if($operation==1)
+			{
+				
+				if($count==0)					
+				{
+					 //Add Product to wishlist				
+					 $values=array($uid,$fid,$this->db->today());
+					 $rows=array("liker_id","feed_id","adate");
+					 $feed_like_id=$this->rp_insert("feed_like",$values,$rows,0);
+					 if($feed_like_id!=0)
+					 {
+						$count=$this->countFeedLike($fid,"feed_id"); 
+						$reply=array("ack"=>1,"developer_msg"=>"Liked!!","ack_msg"=>"Liked!!","result"=>array("count"=>$count));
+						return $reply;
+					 }
+					 else
+					 {
+						 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error!!");
+						return $reply;
+					 }
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"Already in liked","ack_msg"=>"Already Liked!!.");
+					return $reply;
+				}
+				
+			}
+			if($operation==0)
+			{				
+				if($count==1)					
+				{
+					 //remove Product from wishlist									
+					 $feed_like_id=$this->rp_getValue("feed_like","id",$where);			
+					 $isRemoved=$this->rp_delete("feed_like","id='".$feed_like_id."'",0);
+					 if($isRemoved)
+					 {
+						$count=$this->countFeedLike($fid,"feed_id");  
+						$reply=array("ack"=>1,"developer_msg"=>"Unliked!!","ack_msg"=>"Unliked!!","result"=>array("count"=>$count));
+						return $reply;
+					 }
+					 else
+					 {
+						 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error!!");
+						return $reply;
+					 }
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"Already Unliked!!","ack_msg"=>"Already Unliked!!");
+					return $reply;
+				}
+				
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"Operation not found","ack_msg"=>"Internal Error!!");
+				return $reply;
+			}
+																		
+		}
+		else
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+			return $reply;
+		}
+	}
+	function verifyOTP($detail)
+	{
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");
+			$countFromPhone=$this->countUser($detail['phone'],"phone");
+			if($countFromId>=1)
+			{				
+			
+				$isValid=$this->validateDetail($detail,array("phone"));
+				if($isValid['ack']==1)
+				{
+					$count=$this->db->rp_getTotalRecord("user","id='".$detail['id']."' AND otp='".$detail['otp']."'");
+					if($count>0)
+					{
+						$reply=array("ack"=>1,"developer_msg"=>"Otp Verified.","ack_msg"=>"Otp Verified.");
+						return $reply;
+					}
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Wrong OTP","ack_msg"=>"Wrong otp!!");
+						return $reply;
+					}
+						
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+					return $reply;
+				}
+			
+				
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+				return $reply;
+			}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+		}
+	}
+	function verifyCartOTP($detail)
+	{
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");
+			if($countFromId>=1)
+			{				
+				$isValid=$this->validateDetail($detail,array("phone"));
+				if($isValid['ack']==1)
+				{
+					$count=$this->db->rp_getTotalRecord("user","id='".$detail['id']."' AND otp='".$detail['otp']."'");
+					if($count>0)
+					{
+						$reply=array("ack"=>1,"developer_msg"=>"Otp Verified.","ack_msg"=>"Otp Verified.");
+						return $reply;
+					}
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Wrong OTP","ack_msg"=>"Wrong otp!!");
+						return $reply;
+					}
+						
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+					return $reply;
+				}			
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+				return $reply;
+			}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+		}
+	}
+	function sendOTPToContactNumber($detail)
+	{
+		
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");
+			if($countFromId>=1)
+			{
+				$isValid=$this->validateDetail($detail,array("phone"));
+				if($isValid['ack']==1)
+				{
+					
+					$activationCode=$this->generateActivationCode();
+					// Detail of normal user
+					$where=" id='".$detail['id']."'";
+					$values=array("otp"=>$activationCode);			
+					$registerd_user_id=$this->rp_update($this->ctable,$values,$where);
+					if($registerd_user_id!=0)
+					{
+						$name=$this->rp_getValue("user","name",$where);
+						$reply=$this->aj_sendSecurityCode($name,$detail['phone'],$activationCode);						
+						return $reply;
+					}				
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error!! Try Later");
+						return $reply;
+					}				
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+					return $reply;
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+				return $reply;
+			}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}
+	function updateUserProfile($detail)
+	{
+		
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");
+			if($countFromId>=1)
+			{
+				$isValid=$this->validateDetail($detail,array("name"));
+				if($isValid['ack']==1)
+				{
+					
+					// Detail of normal user
+					$where=" id='".$detail['id']."'";
+					$values=array("name"=>$detail['name'],"address"=>$detail['address'],"locality"=>$detail['locality'],"city"=>$detail['city'],"zip"=>$detail['zip'],"state"=>$detail['state'],"country"=>$detail['country']);			
+					$registerd_user_id=$this->rp_update($this->ctable,$values,$where);
+					if($registerd_user_id!=0)
+					{
+						$user_detail=$this->getUserDetail($detail['id']);
+						$reply=array("ack"=>1,"developer_msg"=>"User Registered.","ack_msg"=>"Profile updated successfully.","result"=>$user_detail['result']);
+						return $reply;
+					}				
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Profile couldn't be updated. Try later!!");
+						return $reply;
+					}				
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"user detail not valid","ack_msg"=>"Invalid details.","invalid_field"=>$isValid['invalid']);
+					return $reply;
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!!");
+				return $reply;
+			}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}
+	function updateUserProfilePicture($detail)
+	{
+		
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");
+			if($countFromId>=1)
+			{
+				if (isset($_FILES["file"])) {
+					$allowedExts = array("jpg","jpeg","png","gif","JPG","JPEG");
+					$temp = explode(".", $_FILES["file"]["name"]);
+					 $extension = end($temp);
+				 
+					if($_FILES["file"]["error"]>0) {
+						$error .= "Error opening the file. ";
+					}
+					if($_FILES["file"]["type"]=="application/x-msdownload"){	
+						$error .= "Mime type not allowed. ";
+					}
+					if(!in_array($extension, $allowedExts)){
+						$error .= "Extension not allowed. ";
+					}
+					if($_FILES["file"]["size"] > 26214400){ //26214400 Bytes = 25 MB, 102400 = 100KB
+						$error .= "File size shoud be less than 25 MB ";
+					}
+					if($error=="") {
+						
+						$fileName 	= $db->clean($_FILES["file"]["name"]);			
+						$fileSize 	= round($_FILES["file"]["size"]); // BYTES			
+						
+						$adate 		= date('Y-m-d H:i:m');
+						$r = checkUserStorage($id,$totalStorage,$usedStorage,$fileSize);
+
+						if($r=='success'){
+							
+							$extension	= end(explode(".", $fileName));				
+							$fileName	= $id.'_'.substr(sha1(time()), 0, 6).".".$extension;
+							$filePath 	= "aws/tempImg/".$fileName;
+							$temp2="tempImg/".$fileName;	
+							move_uploaded_file($_FILES['file']['tmp_name'], $filePath);
+							$responses=file_get_contents("http://ednurture.net/ednurture_app/webservice/aws/aws.php?filepath=".$temp2."&filename=".$fileName."&user_id=".$id);	
+							$responses=json_decode($resposes);				
+							if($responses['ack']=1)
+							{
+									
+												  include('aws/awsService.php');
+												  
+												   $aws=new AWS();
+																						 
+									   $resp=$aws->deleteObject($oldFileName);	
+
+									   $rows=array('used_storage'=>$usedStorage-$resp['fileSize']);
+									   $db->rp_update('user_personal_info',$rows,"id='".$id."'",0);
+									   $response = array(
+										"status"		=> 1,
+										"res"			=> "success",
+										"msg"			=> "File uploaded successfully",
+										"fileName"		=> $fileName,
+										"result"=>$responses,
+										"deleteFileResult"=>$resp
+									);
+								
+									unlink($filePath);	
+									
+							}
+							else
+							{	
+								$response = array(
+										"status"		=> 0,
+										"res"			=> "Error occurred while storing file!!",
+										"fileName"		=> $fileName,
+										"result"=>$responses
+										
+									);
+							}
+						
+						}
+						else
+						{
+							$response = array(
+										"status"		=> 0,
+										"res"			=> $r
+
+										
+									);
+						}
+						
+						
+						
+						
+					}
+					else
+					{
+						
+					}
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"image type not valid","ack_msg"=>"Invalid image or image not found.");
+					return $reply;
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!!");
+				return $reply;
+			}
+			
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+	}	
+	function getWishList($detail)
+	{
+		if(!empty($detail))
+		{
+			$countFromId=$this->countUser($detail['id'],"id");
+			if($countFromId>=1)
+			{
+				require_once('class.application.php');
+				$pids_r=$this->db->rp_getData("wishlist","pid","uid='".$detail['id']."'");
+				$pids=array();
+				if($pids_r)
+				{
+					while($p=mysql_fetch_assoc($pids_r))
+					{
+						$pids[]=$p['pid'];
+					}
+				}
+				
+				$application=new application();
+				$ack=$application->getProduct($pids,array(),array(),array(),array(),array(),$detail['id'],array("id","name","sid","ssid","cid","sell_price","max_price","discount_price","image_path","banner_image_path","rate","seller_id")); //product_id,protag,,brand_id,sub_sub_category_id,sub_category_id,category_id	
+				return $ack;
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+				return $reply;
+			}
+		}
+		else			
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"Internal Error!!.");
+			return $reply;
+		}
+		
+	}
+	function getReview($rwid=array(),$pids=array(),$required_columns=array(),$isUserInfoRequired=false,$uid="")
+	{
+		$required_columns=$this->getRequiredColumns($required_columns);				
+		$where="";
+		$product_reviews=false;
+		if(!empty($rwid))
+		{
+			
+			$rwid=implode(",",$rwid);
+			$where=$this->db->generateWhere($where,"id IN (".$rwid.")");
+						
+		}
+		if(!empty($pids))
+		{
+			$pids=implode(",",$pids);
+			$where=$this->db->generateWhere($where,"pid IN (".$pids.")");
+						
+		}		
+		if($where!="")
+		{
+			$product_reviews=$this->db->rp_getData("product_review",$required_columns,$where,"",0);
+		}
+		
+		
+		if($product_reviews)
+		{
+			
+			while($r=mysql_fetch_assoc($product_reviews))
+			{
+				
+					require_once('class.application.php');
+					$application=new application();
+					$updateRatingInfo=$application->updateProductRating($r['pid']);
+					if($updateRatingInfo['ack']==1)
+					{
+						
+						$result['total_rating']=$updateRatingInfo['result']['total_rating'];
+						$result['avg_rating']=$updateRatingInfo['result']['avg_rating'];
+					}
+					if($isUserInfoRequired)
+					{
+						
+						$user_r=$this->getUserDetail($r['uid'],array("name,image_path,email"));
+						if($user_r['ack']==1)
+						{				
+							$r['userInfo']=$user_r['result'];
+						}
+						else
+						{
+							continue;
+						}							
+					}	
+					$result['review'][]=$r;
+			}			
+			$reply=array("ack"=>1,"result"=>$result,"developer_msg"=>"Product Review found in database.","ack_msg"=>"Great !! Product Review Fetched.");
+			return $reply;
+		}
+		else
+		{			
+			$reply=array("ack"=>0,"developer_msg"=>"no review found in database.","ack_msg"=>"Sorry !! No review found.");
+			return $reply;
+		}
+	}
+	function addReview($detail)
+	{
+		$countFromId=$this->countUser($detail['id'],"id");			
+		if($countFromId>=1)
+		{
+			$where="uid='".$detail['id']."' AND pid='".$detail['pid']."'";	
+			$countReview=$this->rp_getTotalRecord("product_review",$where);
+			if($countReview==0)					
+			{
+				$cid=$this->rp_getValue("cartitems","cart_id",$where,0);
+				$countProductPurchase=($cid!=0)?$this->db->rp_getTotalRecord("cartdetails","cart_id='".$cid."' AND (orderstatus='4' OR orderstatus='5')",0):0;
+				if($countProductPurchase>=1)					
+				{
+					//Add Product Review			
+					 $values=array($detail['id'],$detail['pid'],$detail['review'],$detail['rate'],$this->db->today());
+					 $rows=array("uid","pid","review","rate","adate");
+					 $review_id=$this->rp_insert("product_review",$values,$rows,0);
+					 if($review_id!=0)
+					 {
+						require_once('class.application.php');
+						$application=new application();
+						$updateRatingInfo=$application->updateProductRating($detail['pid']);
+						if($updateRatingInfo['ack']==1)
+						{
+							$reply=array("ack"=>1,"developer_msg"=>"Review submitted","ack_msg"=>"Review submitted!!","avg_rating"=>$updateRatingInfo['result']['avg_rating'],"total_rating"=>$updateRatingInfo['result']['total_rating']);
+							return $reply;
+						}
+						else
+						 {
+							 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error!!","extra_ms"=>$updateRatingInfo);
+							return $reply;
+						 }
+					 }
+					 else
+					 {
+						 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error!!");
+						return $reply;
+					 }
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"Purchase product first to review.","ack_msg"=>"Purchase product before review.");
+					return $reply;
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"Already reviewed","ack_msg"=>"You already reviewed this product.");
+				return $reply;
+			}
+				
+			
+																		
+		}
+		else
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+			return $reply;
+		}
+	}
+	function removeReview($detail)
+	{
+		$countFromId=$this->countUser($detail['uid'],"id");			
+		if($countFromId>=1)
+		{
+			$where="uid='".$detail['uid']."' AND id='".$detail['rwid']."'";	
+			$countReview=$this->rp_getTotalRecord("product_review",$where);
+			if($countReview==1)					
+			{
+				
+				//Remove Product Review							
+				 $values=array("isDelete"=>1);
+				 $review_id=$this->rp_update("product_review",$values,$where,0);
+				 if($review_id!=0)
+				 {
+					require_once('class.application.php');
+					$application=new application();
+					$updateRatingInfo=$application->updateProductRating($detail['pid']);
+					$reply=array("ack"=>1,"developer_msg"=>"Review removed","ack_msg"=>"Review removed!!","avg_rating"=>$updateRatingInfo['result']['avg_rating'],"total_rating"=>$updateRatingInfo['result']['total_rating']);
+					return $reply;
+				 }
+				 else
+				 {
+					 $reply=array("ack"=>0,"developer_msg"=>"Database error!!","ack_msg"=>"Internal Error!!");
+					return $reply;
+				 }
+				
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"Review not found ","ack_msg"=>"You already removed from this product.");
+				return $reply;
+			}
+				
+			
+																		
+		}
+		else
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user id not valid","ack_msg"=>"Internal Error!! You are blocked or account suspended.");
+			return $reply;
+		}
+	}
+	function getUserDetail($user_id=0,$required_columns=array())
+	{
+		$required_columns=$this->getRequiredColumns($required_columns);
+		if($user_id!=0)
+		{
+			$where="id='".$user_id."'";
+			$result=$this->rp_getData($this->ctable,$required_columns,$where);
+			if($result)
+			{
+				$detail=mysql_fetch_assoc($result);
+				$detail['countFollower']=0;
+				$detail['countFollowing']=$this->db->rp_getTotalRecord("seller_follower","follower_id='".$user_id."'");
+				$detail['countWishlist']=$this->db->rp_getTotalRecord("wishlist","uid='".$user_id."'");
+				$detail['countOrder']=$this->db->rp_getTotalRecord("cartdetails","uid='".$user_id."' AND orderstatus!=1");
+				$detail['wallet_amount']=$this->db->rp_getValue("user_wallet","amount","uid='".$user_id."'");
+				$detail['image_path']=ADMINSITEURL.USER_MAIN.$detail['image_path'];
+				$reply=array("ack"=>1,"developer_msg"=>"user detail found","ack_msg"=>"User detail found.","result"=>$detail);
+				return $reply;
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"User not found.");
+				return $reply;
+			}
+		}
+		else
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user detail not found","ack_msg"=>"User not found.");
+			return $reply;
+		}
+	}
+	function validateDetail($detail,$validateKey)
+	{
+		$isValid=true;
+		$result=array("invalid"=>array());
+		// Name Validation
+		if(array_key_exists("name",$validateKey) && !array_key_exists("name",$detail) && strlen(trim(" ",$detail['name']))>0)
+		{
+			$result['invalid']['name']="Name must be entered.";
+			$isValid=false;
+		}
+		
+		// Email Validation
+		if(array_key_exists("email",$validateKey) && !array_key_exists("email",$detail) && strlen($detail['email'])>0)
+		{
+			$result['invalid']['email']="Email must be entered.";
+			$isValid=false;
+		}
+		else if(array_key_exists("email",$validateKey) && filter_var($detail['email'], FILTER_VALIDATE_EMAIL) === false)
+		{
+			$result['invalid']['email']="Email is not valid.";
+			$isValid=false;
+		}
+		
+		// Password Validation
+		if(array_key_exists("password",$validateKey) && !array_key_exists("password",$detail) && strlen($detail['password'])>0)
+		{
+			$result['invalid']['password']="Password must be entered.";
+			$isValid=false;
+		}
+		
+		// Phone Validation
+		if(array_key_exists("phone",$validateKey) && !array_key_exists("phone",$detail) && strlen($detail['phone'])==10)
+		{
+			$result['invalid']['phone']="Contact number must be 10 digit.";
+			$isValid=false;
+		}
+		
+		if($isValid)
+		{
+			return array("ack"=>1);
+		}
+		else
+		{
+			$result['ack']=0;
+			return $result;
+		}
+		
+	}
+	function getUserId($val,$key)
+	{
+		$where=$key."='".$val."'";
+		$count=$this->rp_getValue($this->ctable,"id",$where);
+		return $count;
+	}
+	function countUser($val,$key)
+	{
+		$where=$key."='".$val."'";
+		$count=$this->rp_getTotalRecord($this->ctable,$where,0);
+		return $count;
+	}
+	function aj_sendSecurityCode($name="User",$number,$activationCode)
+	{
+		require_once('notification.class.php');
+		$nt = new Notification();					
+		$sms="Hello ".$name.",\nYour Code:".$activationCode."\nThank You,\nTeam ".SITETITLE;			
+		$msgId="NO";
+		if($number!="")
+		{
+			$msgId=$nt->aj_sendSMSSecurity($number,$sms);
+			if($msgId!=0)
+			{
+				return $deliveryStatus=array("ack"=>1,"ack_msg"=>"OTP sent to ".$number." successfully");	
+			}
+			//$deliveryStatus=$nt->aj_getDeliveryReport($msgId);
+			else
+			$deliveryStatus=array("ack"=>0,"ack_msg"=>"SMS sending failed on".$number,"reason"=>"Invalid mobile number or mobile switched off or out of coverage area!!");	
+			return $deliveryStatus;			
+		}		
+		return array('ack'=>0,'ack_msg'=>"Internal Error!","developer_msg"=>"Empty Mobile Number");
+	}
+	function generateActivationCode()
+	{
+		$characters='0123456789';
+		$randStr="";
+		for($i=0;$i<=5;$i++)
+		{
+			$randStr=$randStr.$characters[rand(0,strlen($characters)-1)];
+		}
+		return $randStr;
+	}
+	function getRequiredColumns($required_columns=array())
+	{
+		if(!empty($required_columns))
+		{
+			$required_columns_string=implode(",",$required_columns);
+			return $required_columns_string;
+		}
+		else
+		{
+			return "*";
+		}
+	}
+	function countFeedLike($val,$key)
+	{
+		$where=$key."='".$val."'";
+		$count=$this->rp_getTotalRecord($this->ctableFeedLike,$where,0);
+		return $count;
+	}
+	// ---------------------------------- User Wallet ----------------------------------\\
+	function getUserWalletDetail($detail,$required_columns=array())
+	{
+		$required_columns=$this->getRequiredColumns($required_columns);
+		$countFromId=$this->countUser($detail['id'],"id");
+		$countWalletFromUId=$this->countWallet($detail['id'],"uid");		
+		if($countFromId>=1 && $countWalletFromUId>=1)
+		{
+			$where="uid='".$detail['id']."'";
+			$result=$this->rp_getData($this->ctableWallet,$required_columns,$where,"",0);
+			if($result)
+			{
+				$detail=mysql_fetch_assoc($result);
+				$reply=array("ack"=>1,"developer_msg"=>"user wallet detail found","ack_msg"=>"User wallet detail found.","result"=>$detail);
+				return $reply;
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user wallet detail not found","ack_msg"=>"User wallet not found.");
+				return $reply;
+			}
+		}
+		else
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user not registered or wallet not found","ack_msg"=>"Internal Error!!",);
+			return $reply;
+		}
+	}
+	function maintainWallet($detail,$operation=0)
+	{
+		$countFromId=$this->countUser($detail['id'],"id");
+		$countWalletFromUId=$this->countWallet($detail['id'],"uid");		
+		if($countFromId>=1 && $countWalletFromUId>=1)
+		{
+			$where="uid='".$detail['id']."'";			
+			if($this->rp_update($this->ctableWallet,array("isLocked"=>$operation,"last_locked_time"=>$this->db->today()),$where))
+			{
+				$reply=array("ack"=>1,"developer_msg"=>"user wallet locked","ack_msg"=>"User wallet locked.");
+				return $reply;
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user wallet can't be locked","ack_msg"=>"User wallet can't be locked");
+				return $reply;
+			}
+		}
+		else
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user not registered or wallet not found","ack_msg"=>"Internal Error!!",);
+			return $reply;
+		}
+	}
+
+	function isWalletLocked($detail,$required_columns=array())
+	{
+		$required_columns=$this->getRequiredColumns($required_columns);
+		$countFromId=$this->countUser($detail['id'],"id");
+		$countWalletFromUId=$this->countWallet($detail['id'],"uid");		
+		if($countFromId>=1 && $countWalletFromUId>=1)
+		{
+			$where="uid='".$detail['id']."'";
+			$result=$this->rp_getData($this->ctableWallet,$required_columns,$where,"",0);
+			if($result)
+			{
+				$result=mysql_fetch_assoc($result);
+				$last_locked_time=$result['last_locked_time'];
+				if($last_locked_time!="" && $last_locked_time!="0000-00-00 00:00:00")
+				{
+					
+					$last_locked_time=new DateTime($result['last_locked_time']);
+					$diffrence=$last_locked_time->diff(new DateTime($this->db->today()));
+								
+					if(($diffrence->i)<5)
+					{
+						$reply=array("ack"=>1,"developer_msg"=>"Yes Wallet Locked","ack_msg"=>"User wallet Locked .");
+						return $reply;
+					}
+					else
+					{
+						$reply=array("ack"=>0,"developer_msg"=>"No Wallet Not Locked","ack_msg"=>"User wallet not locked.");
+						return $reply;
+					}
+					
+				}
+				else
+				{
+					$reply=array("ack"=>0,"developer_msg"=>"No Wallet Not Locked","ack_msg"=>"User wallet not locked.");
+					return $reply;
+				}
+			}
+			else
+			{
+				$reply=array("ack"=>0,"developer_msg"=>"user wallet detail not found","ack_msg"=>"User wallet not found.");
+				return $reply;
+			}
+		}
+		else
+		{
+			$reply=array("ack"=>0,"developer_msg"=>"user not registered or wallet not found","ack_msg"=>"Internal Error!!",);
+			return $reply;
+		}
+	}
+	function countWallet($val,$key)
+	{
+		$where=$key."='".$val."'";
+		$count=$this->rp_getTotalRecord($this->ctableWallet,$where,0);
+		return $count;
+	}
+}
+?>

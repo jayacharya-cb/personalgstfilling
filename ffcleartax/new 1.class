@@ -1,0 +1,59 @@
+body{
+	font-size:12px!important;
+}
+.table-input{
+	min-width:50px!important;
+	max-width:250px!important;
+	width:auto!important;
+	font-size:11px!important;
+	border-radius:0px!important;
+	border:0px solid #FFF;
+	padding:5px 4px 5px 4px;
+}
+.table-list th{
+	font-size:12px!important;
+}
+
+.table-list  tfoot th{
+	padding:5px 4px 5px 4px!important;
+}
+.table-list td{
+	padding:0px!important;
+}
+.table-list-view td{
+	font-size:12px!important;
+	padding:3px!important;
+}
+.item-description{
+	width:175px!important;
+}
+.item-type{
+	width:62px!important;
+}
+.item-rate{
+	width:45px!important;
+}
+.item-hsn{
+	width:60px!important;
+}
+.item-qty{
+	width:45px!important;
+}
+.item-discount{
+	width:50px!important;
+}
+.item-taxable{
+	width:70px!important;
+}
+.item-tax-rate{
+	width:60px!important;
+}
+.item-tax-amount{
+	width:70px!important;
+}
+.item-subtotal{
+	width:105px!important;
+}
+.lable-inline {
+	line-height:35px!important;
+}

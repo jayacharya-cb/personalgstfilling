@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<sidebar>
+	<item
+		page_id="400"
+		title="Dashboard"
+		id="nav_dashboard"		
+		url="dashboard.php"
+		icon="icon icon-home">
+			Dashboard
+	</item>	
+	<group
+		page_id="401"
+		title="Masters"
+		id="nav_sales"		
+		url="#"
+		icon="icon icon-home">
+			<item
+				id="nav_invoice_item"		
+				url="quick_invoice_item_manage.php"
+				icon="fa fa-cubes">
+					Items
+			</item>	
+			<item
+				id="nav_customer"		
+				url="customer_manage.php"
+				icon="fa fa-user">
+					Customers
+			</item>				
+	</group>
+	<group
+		page_id="401"
+		title="Sales"
+		id="nav_sales"		
+		url="#"
+		icon="icon icon-home">
+			<item
+				id="nav_sales_invoice"		
+				url="quick_invoice_manage.php"
+				icon="fa fa-file">
+					Sales Invoices
+			</item>
+			<item
+				id="nav_sales_invoice"		
+				url="quick_invoice_reverse_manage.php"
+				icon="fa fa-file">
+					Reverse Sales Invoices
+			</item>			
+	</group>
+	<group
+		page_id="401"
+		title="Store"
+		id="nav_store"		
+		url="#"
+		icon="icon icon-home">
+			<item
+				id="nav_store"		
+				url="quick_invoice_item_stock_manage.php"
+				icon="fa fa-cubes">
+					Stock
+			</item>	
+			<item
+				id="nav_store_inward"		
+				url="quick_purchase_invoice_manage.php"
+				icon="fa fa-plus">
+					Purchase Invoice
+			</item>
+			<item
+				id="nav_stock_adjustment"		
+				url="quick_stock_adjustment_manage.php"
+				icon="fa fa-plus">
+					Stock Adjustment
+			</item>					
+	</group>
+	
+	
+	
+</sidebar>

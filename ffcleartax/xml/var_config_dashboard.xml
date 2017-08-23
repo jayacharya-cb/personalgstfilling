@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<tiles>
+	
+		<item
+			title="Sales Invoices"
+			count_table="quick_invoice_info"
+			count_condition="isDelete=0"
+			id="dashboard_quick_invoice"		
+			url="quick_invoice_manage.php"
+			color="red"
+			icon="icon-pie-chart">				
+		</item>	
+		<item
+			title="Customers"
+			count_table="quick_invoice_contact"
+			count_condition="isDelete=0"
+			id="dashboard_customer"		
+			url="customer_manage.php"
+			color="red"
+			icon="icon-user">				
+		</item>	
+		<item
+			title="Items"
+			count_table="quick_invoice_item_master"
+			count_condition="isDelete=0"
+			id="dashboard_item"		
+			url="quick_invoice_item_manage.php"
+			color="red"
+			icon=" fa fa-cubes">				
+		</item>	
+			
+	
+</tiles>

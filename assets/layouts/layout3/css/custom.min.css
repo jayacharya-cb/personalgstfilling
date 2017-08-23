@@ -1,0 +1,140 @@
+body{
+	font-size:12px!important;
+}
+.table-input{
+	min-width:50px!important;
+	max-width:250px!important;
+	width:auto!important;
+	font-size:11px!important;
+	border-radius:0px!important;
+	border:0px solid #FFF;
+	padding:5px 4px 5px 4px;
+}
+.table-list th{
+	font-size:3mm!important;
+}
+
+.table-list  tfoot th{
+	padding:5px 4px 5px 4px!important;
+}
+.table-list td{
+	padding:0px!important;
+}
+.table-list td >input.has-error{
+	border:1px solid #f00;
+}
+.table-list th{
+	font-size:12px!important;
+}
+
+.table-list  tfoot th{
+	padding:5px 4px 5px 4px!important;
+}
+.table-list td{
+	padding:0px!important;
+}
+.table-list-view td{
+	font-size:12px!important;
+	padding:3px!important;
+}
+td.item-description{
+	max-width:165px!important;
+	word-wrap:break-word!important;
+}	
+th.item-description{
+	max-width:165px!important;
+	word-wrap:break-word!important;
+	
+}
+.item-type{
+	width:62px!important;
+}
+.item-rate{
+	width:45px!important;
+}
+.item-purchase-rate{
+	width:45px!important;
+}
+.item-stotal{
+	width:70px!important;
+}
+.item-hsn{
+	width:60px!important;
+}
+.item-qty{
+	width:45px!important;
+}
+.item-discount{
+	width:50px!important;
+}
+.item-taxable{
+	width:70px!important;
+}
+.item-tax-rate{
+	width:60px!important;
+}
+.item-tax-amount{
+	width:70px!important;
+}
+.item-subtotal{
+	width:105px!important;
+}
+.lable-inline {
+	line-height:35px!important;
+}
+.table-list-view td{
+	font-size:2mm!important;
+	padding:3px!important;
+	/*border:1px #000 solid!important;*/
+}
+.table-list-view th{
+	/*border:0.5px #000 solid!important;*/
+}
+.table-list-view{
+	
+}
+.table-list-view.item-description{
+	max-width:53mm!important;
+	word-wrap:break-word!important;
+	width:53mm!important;
+	
+}
+.table-list-view.item-type{
+	max-width:62px!important;
+	
+}
+.table-list-view.item-rate{
+	width:10mm!important;
+}
+.table-list-view.item-hsn{
+	width:15mm!important;
+}
+.table-list-view.item-qty{
+	width:10mm!important;
+}
+.table-list-view.item-discount{
+	width:13mm!important;
+}
+.table-list-view.item-taxable{
+	width:13mm!important;
+}
+.table-list-view.item-tax-rate{
+	width:8mm!important;
+}
+.table-list-view.item-tax-amount{
+	width:13mm!important;
+}
+.table-list-view.item-subtotal{
+	width:13mm!important;
+}
+.lable-inline {
+	line-height:35px!important;
+}
+.popover-title {
+    color: blue;
+    font-size: 15px;
+}
+.popover-content {
+    color: red;
+    font-size: 10px;
+}
